@@ -70,3 +70,26 @@ The first version of STRIDE will consist of the following modules:
 - Recommendation Engine
 - Simulation Module
 - Report Generator
+
+---
+
+## 8. Technologies Used
+
+| Category | Technology |
+|----------|------------|
+| Programming Language | Python |
+| GUI Development | Tkinter (Initially) |
+| Database | SQLite |
+| Data Processing | Pandas |
+| Mathematical Computation | NumPy |
+| Visualization | Matplotlib |
+| Version Control | Git & GitHub |
+
+---
+
+## 9. Version History
+
+| Version | Description | Status |
+|----------|-------------|--------|
+| v0.1 | Project Initialization | ✅ Completed |
+| v0.2 | Software Requirement Specification | 🔄 In Progress |
