@@ -27,3 +27,46 @@ Develop a Python-based engineering decision support software that recommends the
 - Recommend the most suitable vehicle using engineering parameters.
 - Integrate a basic simulation module to visualize mission scenarios.
 - Design the software in a modular way so it can be expanded in future academic projects.
+
+---
+
+## 4. Scope
+
+The scope of STRIDE is to develop a software application that assists in selecting the most suitable autonomous ground vehicle for defense missions based on mission requirements and vehicle specifications. The first version will focus on vehicle recommendation and a basic mission simulation. Future versions will include route planning, multiple vehicle coordination, and hardware integration.
+
+---
+
+## 5. Functional Requirements
+
+The software shall be able to:
+
+- Store vehicle specifications.
+- Store terrain information.
+- Allow users to define mission requirements.
+- Compare mission requirements with vehicle capabilities.
+- Recommend the most suitable vehicle.
+- Display a basic mission simulation.
+- Generate a mission summary report.
+
+---
+
+## 6. Non-Functional Requirements
+
+- The software should have a simple and user-friendly interface.
+- The recommendation process should be fast and reliable.
+- The software should be modular for future expansion.
+- The software should be compatible with Windows operating systems.
+- The code should be well-structured and easy to maintain.
+
+---
+
+## 7. Software Modules
+
+The first version of STRIDE will consist of the following modules:
+
+- Vehicle Module
+- Terrain Module
+- Mission Module
+- Recommendation Engine
+- Simulation Module
+- Report Generator
