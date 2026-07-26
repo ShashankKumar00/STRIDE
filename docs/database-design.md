@@ -8,18 +8,18 @@ The database stores all the information required by STRIDE to compare mission re
 
 ## 1. Vehicle Database
 
-Stores the specifications of each autonomous ground vehicle.
+Stores the engineering specifications of autonomous ground vehicles used for mission evaluation and recommendation.
 
 | Field | Description |
 |--------|-------------|
-| Vehicle ID | Unique identifier |
-| Vehicle Name | Name of the vehicle |
-| Payload Capacity | Maximum payload |
-| Battery Capacity | Available battery |
-| Ground Clearance | Distance from ground |
-| Maximum Speed | Top speed |
-| Turning Radius | Turning capability |
-| Terrain Compatibility | Supported terrains |
+| Vehicle ID | Unique identification number for each vehicle. |
+| Vehicle Name | Name or model of the autonomous ground vehicle. |
+| Payload Capacity | Maximum load the vehicle can safely carry during a mission. |
+| Battery Capacity | Available energy for completing the assigned mission. |
+| Ground Clearance | Height between the vehicle's underside and the ground, indicating its ability to navigate uneven terrain. |
+| Maximum Speed | Highest operating speed of the vehicle under normal conditions. |
+| Turning Radius | Minimum space required by the vehicle to make a complete turn, affecting maneuverability. |
+| Terrain Compatibility | Types of terrain (rocky, sandy, muddy, etc.) on which the vehicle can operate effectively. |
 
 ---
 
