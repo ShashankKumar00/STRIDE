@@ -297,6 +297,18 @@ def rank_vehicles(vehicles, requirements, weights):
             final_score, scores = calculate_vehicle_score(vehicle, requirements, weights, derived)
             explanation = generate_explanation(vehicle, scores, True, [], requirements, derived)
             
+            # Phase 10: Terrain Route Feasibility
+            try:
+                from planning.route_planner import calculate_route_feasibility
+                route_info = calculate_route_feasibility(
+                    vehicle,
+                    requirements.get("Terrain", "Plain / Grassland"),
+                    derived["mission_distance"],
+                    derived["max_time"]
+                )
+            except Exception:
+                route_info = {}
+                
             feasible_results.append({
                 "vehicle_id": vehicle.get("vehicle_id", "N/A"),
                 "vehicle_name": vehicle.get("vehicle_name", "Unknown Vehicle"),
@@ -304,6 +316,7 @@ def rank_vehicles(vehicles, requirements, weights):
                 "final_score": final_score,
                 "scores": scores,
                 "explanation": explanation,
+                "route_info": route_info,
                 "details": vehicle
             })
         else:

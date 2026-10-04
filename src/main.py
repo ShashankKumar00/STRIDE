@@ -134,6 +134,19 @@ def calculate_results():
                 for w in expl["weaknesses"]:
                     result_text.insert(tk.END, f"  ⚠  {w}\n", "bullet_yellow")
 
+            # Phase 10: Terrain Route Feasibility Briefing
+            route_info = best_vehicle.get("route_info", {})
+            if route_info:
+                result_text.insert(tk.END, "\nTERRAIN & ROUTE FEASIBILITY (PHASE 10):\n", "heading_small")
+                eff_d = route_info.get("effective_distance_km", operating_range)
+                df = route_info.get("detour_factor", 1.0)
+                eff_spd = route_info.get("effective_speed_kmh", best_vehicle['details'].get('max_speed_kmh', 0))
+                t_dur = route_info.get("transit_duration_hours", 0)
+                trav_idx = route_info.get("traversability_index", 1.0)
+                result_text.insert(tk.END, f"  • Detour-Adjusted Route: {eff_d:.1f} km (Detour Factor: {df:.2f}x)\n", "meta_text")
+                result_text.insert(tk.END, f"  • Off-Road Traversability: {trav_idx:.2f}   |   Effective Speed: {eff_spd:.1f} km/h\n", "meta_text")
+                result_text.insert(tk.END, f"  • Estimated Transit Time: {t_dur:.2f} h   |   Deadline: {maximum_time:.1f} h\n", "meta_text")
+
             result_text.insert(tk.END, "\n" + "=" * 68 + "\n\n", "separator")
 
             # Feasible Ranking Table
