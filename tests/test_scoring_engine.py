@@ -214,7 +214,44 @@ class TestScoringEngine(unittest.TestCase):
         self.assertIn("is_stable", sens)
         self.assertIn("summary", sens)
 
+    # 4. Expanded 24-Vehicle Catalog & Asset Verification Tests
+    def test_database_platform_count_and_uniqueness(self):
+        """Verify that the database contains exactly 24 unique platforms."""
+        self.assertEqual(len(VEHICLE_DATABASE), 24)
+        ids = [v["vehicle_id"] for v in VEHICLE_DATABASE]
+        self.assertEqual(len(ids), len(set(ids)), "Vehicle IDs must be unique")
+        names = [v["vehicle_name"] for v in VEHICLE_DATABASE]
+        self.assertEqual(len(names), len(set(names)), "Vehicle names must be unique")
+
+    def test_all_vehicles_have_valid_images_on_disk(self):
+        """Verify that every vehicle has a valid image asset existing on disk."""
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        for v in VEHICLE_DATABASE:
+            img_rel = v.get("image_path")
+            self.assertIsNotNone(img_rel, f"Missing image_path for {v['vehicle_name']}")
+            img_full = os.path.join(repo_root, img_rel)
+            self.assertTrue(os.path.exists(img_full), f"Image file not found: {img_full} for {v['vehicle_name']}")
+            self.assertGreater(os.path.getsize(img_full), 1000, f"Image file is empty or corrupted: {img_full}")
+
+    def test_all_vehicles_have_extended_schema_fields(self):
+        """Verify that all 24 platforms adhere to the extended schema."""
+        for v in VEHICLE_DATABASE:
+            self.assertIn("max_control_range_km", v)
+            self.assertIn("control_link_types", v)
+            self.assertIsInstance(v["control_link_types"], list)
+            self.assertGreater(len(v["control_link_types"]), 0)
+            self.assertIn("climate_altitude", v)
+            self.assertIn("min_operating_temp_c", v["climate_altitude"])
+            self.assertIn("max_operating_temp_c", v["climate_altitude"])
+            self.assertIn("max_altitude_m_asl", v["climate_altitude"])
+            self.assertIn("stealth_profile", v)
+            self.assertIn("propulsion_type", v["stealth_profile"])
+            self.assertIn("acoustic_stealth_db_at_10m", v["stealth_profile"])
+            self.assertIn("thermal_signature_level", v["stealth_profile"])
+            self.assertIn("provenance", v)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
