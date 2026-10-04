@@ -1,22 +1,31 @@
-PRIORITY_POINTS = {
-    "Very High": 6,
-    "High": 5,
-    "Medium": 4,
+# Priority Weight System for STRIDE
+
+
+PRIORITY_WEIGHTS = {
+    "Very High": 5,
+    "High": 4,
+    "Medium": 3,
     "Low": 2,
     "Very Low": 1
 }
 
 
-def generate_weights(priority_order):
-    total_points = sum(
-        PRIORITY_POINTS[priority]
-        for priority in priority_order.values()
-    )
+def generate_weights(priority_selections):
+    """
+    Converts the user's priority selections into numerical weights.
+
+    Example:
+        "High" -> 4
+        "Medium" -> 3
+    """
 
     weights = {}
 
-    for parameter, priority in priority_order.items():
-        points = PRIORITY_POINTS[priority]
-        weights[parameter] = (points / total_points) * 100
+    for parameter, priority in priority_selections.items():
+
+        weights[parameter] = PRIORITY_WEIGHTS.get(
+            priority,
+            3
+        )
 
     return weights

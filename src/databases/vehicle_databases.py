@@ -4,7 +4,7 @@ vehicle_database = [
     {
         "vehicle_name": "MUNTRA-S",
         "manufacturer": "DRDO - CVRDE",
-        "role": "Surveillance and reconnaissance",
+        "role": ["Surveillance", "reconnaissance"],
         "terrain": ["All Terrain"],
         "payload_capacity": "Mission-specific",
         "max_speed": 20,
@@ -16,7 +16,7 @@ vehicle_database = [
     {
         "vehicle_name": "MUNTRA-M",
         "manufacturer": "DRDO - CVRDE",
-        "role": "Mine detection and marking",
+        "role": ["Mine detection", "marking"],
         "terrain": ["All Terrain"],
         "payload_capacity": "Mission-specific",
         "max_speed": 20,
@@ -28,7 +28,7 @@ vehicle_database = [
     {
         "vehicle_name": "MUNTRA-N",
         "manufacturer": "DRDO - CVRDE",
-        "role": "NBC / CBRN reconnaissance",
+        "role": ["NBC / CBRN reconnaissance"],
         "terrain": ["All Terrain"],
         "payload_capacity": "Mission-specific",
         "max_speed": 20,
@@ -40,7 +40,7 @@ vehicle_database = [
     {
         "vehicle_name": "ECARS 4x4",
         "manufacturer": "Kalyani Strategic Systems / Bharat Forge",
-        "role": "Surveillance, security, safety and rescue",
+        "role": ["Surveillance", "security", "safety", "rescue"],
         "terrain": ["Mud", "Sand", "Multi Terrain", "All Weather"],
         "payload_capacity": 350,
         "max_speed": 20,
@@ -52,7 +52,7 @@ vehicle_database = [
     {
         "vehicle_name": "Mooshak",
         "manufacturer": "Dronobotics",
-        "role": "Multi-role military support",
+        "role": ["Multi-role military support"],
         "terrain": ["Rough Terrain", "Off Road"],
         "payload_capacity": 3,
         "max_speed": 20,
@@ -64,7 +64,7 @@ vehicle_database = [
     {
         "vehicle_name": "BRUTE",
         "manufacturer": "Gridbots Technologies",
-        "role": "Combat, surveillance and tactical support",
+        "role": ["Combat, surveillance", "tactical support"],
         "terrain": ["All Terrain"],
         "payload_capacity": 50,
         "max_speed": 10,
@@ -76,7 +76,7 @@ vehicle_database = [
     {
         "vehicle_name": "HAWK",
         "manufacturer": "Gridbots Technologies",
-        "role": "EOD, IED disposal and reconnaissance",
+        "role": ["EOD", "IED disposal", "reconnaissance"],
         "terrain": ["Rough Terrain", "Urban", "Stairs"],
         "payload_capacity": 100,
         "max_speed": 10,
@@ -88,7 +88,7 @@ vehicle_database = [
     {
         "vehicle_name": "ZEUS",
         "manufacturer": "Gridbots Technologies",
-        "role": "Combat, logistics, mine clearance and surveillance",
+        "role": ["Combat", "logistics", "mine clearance", "surveillance"],
         "terrain": ["All Terrain", "Rough Terrain"],
         "payload_capacity": 1500,
         "max_speed": 15,
@@ -100,7 +100,7 @@ vehicle_database = [
     {
         "vehicle_name": "Vrishabh",
         "manufacturer": "Bhairav Robotics",
-        "role": "Combat, ISR, casualty evacuation and logistics",
+        "role": ["Combat", "ISR", "casualty evacuation", "logistics"],
         "terrain": ["Desert", "Plains", "Rough Terrain"],
         "payload_capacity": 150,
         "max_speed": 50,
@@ -112,7 +112,7 @@ vehicle_database = [
     {
         "vehicle_name": "Daksh Scout",
         "manufacturer": "DRDO",
-        "role": "Reconnaissance and surveillance",
+        "role": ["Reconnaissance", "surveillance"],
         "terrain": ["Rough Terrain", "Stairs", "Urban"],
         "payload_capacity": "N/A",
         "max_speed": 1.2,
