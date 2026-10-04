@@ -26,22 +26,21 @@ priority_options = [
 mission_roles = [
     "Reconnaissance",
     "Surveillance",
+    "Combat / Tactical Support",
     "EOD / IED Disposal",
     "Mine Detection / Clearance",
-    "CBRN",
-    "Logistics / Transport",
-    "Combat Support"
+    "CBRN Reconnaissance",
+    "Logistics / Transport / Casualty Evacuation"
 ]
 
 terrain_options = [
-    "Road / Paved",
-    "Grassland",
-    "Dirt / Gravel",
-    "Sand / Desert",
+    "Paved Road / Urban",
+    "Plain / Grassland",
+    "Desert / Sand",
     "Mud / Soft Ground",
-    "Rocky / Rugged",
+    "Rugged / Mountainous / Rocky",
     "Snow / Ice",
-    "Urban / Built-up"
+    "Extreme Obstacles / Stairs / Confined Spaces"
 ]
 
 def clear_results():
@@ -96,40 +95,92 @@ def calculate_results():
         weights = generate_weights(priority_selections)
         results = rank_vehicles(vehicle_database, requirements, weights)
 
-        if not results:
-            messagebox.showwarning("Analysis Notice", "No vehicles found in database.")
-            return
+        feasible_list = results.get("feasible", [])
+        infeasible_list = results.get("infeasible", [])
+        derived = results.get("derived", {})
 
         clear_results()
 
         result_text.insert(tk.END, "STRIDE VEHICLE ANALYSIS\n", "title")
-        result_text.insert(tk.END, "Mission compatibility assessment and vehicle ranking\n\n", "subtitle")
+        result_text.insert(tk.END, "Indian Defence UGV Mission Compatibility & Selection Engine\n\n", "subtitle")
 
-        result_text.insert(tk.END, "VEHICLE RANKING\n", "heading")
-        result_text.insert(tk.END, "-" * 62 + "\n\n")
+        # Operational Mission Context
+        result_text.insert(tk.END, "MISSION PROFILE & DERIVED CONSTRAINTS\n", "heading")
+        result_text.insert(tk.END, "-" * 68 + "\n", "separator")
+        result_text.insert(tk.END, f"• Role: {requirements['Mission Role']}   |   Terrain: {requirements['Terrain']}\n", "meta_text")
+        result_text.insert(tk.END, f"• Payload: {payload:.1f} kg   |   Mission Distance: {operating_range:.1f} km\n", "meta_text")
+        result_text.insert(tk.END, f"• Time Window: {minimum_time:.1f}h - {maximum_time:.1f}h   |   Min Required Speed: {derived.get('required_speed', 0.0):.1f} km/h\n\n", "meta_text")
 
-        for index, vehicle in enumerate(results, start=1):
-            score = vehicle["final_score"]
-            result_text.insert(tk.END, f"{index:>2}.", "rank")
-            result_text.insert(tk.END, f"  {vehicle['vehicle_name']:<32}", "vehicle")
-            result_text.insert(tk.END, f"{score:>7.2f}%\n", "score")
+        if feasible_list:
+            best_vehicle = feasible_list[0]
+            expl = best_vehicle.get("explanation", {})
 
-        best_vehicle = results[0]
-        result_text.insert(tk.END, "\n" + "=" * 62 + "\n", "separator")
-        result_text.insert(tk.END, "★ RECOMMENDED VEHICLE\n\n", "recommendation_title")
-        result_text.insert(tk.END, f"{best_vehicle['vehicle_name']}\n", "recommendation_vehicle")
-        result_text.insert(tk.END, f"Compatibility Score: {best_vehicle['final_score']:.2f}%\n\n", "recommendation_score")
-        result_text.insert(
-            tk.END,
-            "Recommendation generated from mission requirements and user-defined priorities.\n",
-            "recommendation_note"
+            result_text.insert(tk.END, "=" * 68 + "\n", "separator")
+            result_text.insert(tk.END, "★ RECOMMENDED VEHICLE\n\n", "recommendation_title")
+            result_text.insert(tk.END, f"{best_vehicle['vehicle_name']}   ({best_vehicle.get('vehicle_id', 'N/A')})\n", "recommendation_vehicle")
+            result_text.insert(tk.END, f"Overall Suitability Score: {best_vehicle['final_score']:.2f}%\n", "recommendation_score")
+            result_text.insert(tk.END, f"Manufacturer: {best_vehicle['details'].get('manufacturer', 'Unknown')}   |   Mobility: {best_vehicle['details'].get('mobility_type', 'N/A')}\n\n", "meta_text")
+
+            result_text.insert(tk.END, "WHY RECOMMENDED:\n", "heading_small")
+            result_text.insert(tk.END, f"• {expl.get('summary', 'Achieved top multi-criteria compatibility.')}\n", "recommendation_note")
+
+            if expl.get("strengths"):
+                result_text.insert(tk.END, "\nKEY STRENGTHS:\n", "heading_small")
+                for s in expl["strengths"]:
+                    result_text.insert(tk.END, f"  ✓  {s}\n", "bullet_green")
+
+            if expl.get("weaknesses"):
+                result_text.insert(tk.END, "\nOPERATIONAL NOTICES / UNCERTAINTIES:\n", "heading_small")
+                for w in expl["weaknesses"]:
+                    result_text.insert(tk.END, f"  ⚠  {w}\n", "bullet_yellow")
+
+            result_text.insert(tk.END, "\n" + "=" * 68 + "\n\n", "separator")
+
+            # Feasible Ranking Table
+            result_text.insert(tk.END, "QUALIFIED VEHICLE RANKING (STAGE 2 MCDM)\n", "heading")
+            result_text.insert(tk.END, "-" * 68 + "\n", "separator")
+            result_text.insert(tk.END, f"{'RK':<4}{'VEHICLE':<24}{'OVERALL':<12}{'SPEED':<12}{'MOBILITY':<16}\n", "table_header")
+            result_text.insert(tk.END, "-" * 68 + "\n", "separator")
+
+            for index, vehicle in enumerate(feasible_list, start=1):
+                score = vehicle["final_score"]
+                v_name = vehicle["vehicle_name"]
+                v_speed = f"{vehicle['details'].get('max_speed_kmh', 0.0):.1f} km/h"
+                v_mob = vehicle['details'].get('mobility_type', 'N/A')
+                result_text.insert(tk.END, f"{index:<4}", "rank")
+                result_text.insert(tk.END, f"{v_name:<24}", "vehicle")
+                result_text.insert(tk.END, f"{score:>6.2f}%    ", "score")
+                result_text.insert(tk.END, f"{v_speed:<12}", "meta_text")
+                result_text.insert(tk.END, f"{v_mob:<16}\n", "meta_text")
+
+            # Phase 7: Decision Robustness & Sensitivity Briefing
+            sens = results.get("sensitivity", {})
+            if sens:
+                result_text.insert(tk.END, "\nDECISION ROBUSTNESS & SENSITIVITY:\n", "heading_small")
+                result_text.insert(tk.END, f"• {sens.get('summary', '')}\n", "meta_text")
+                for sp in sens.get("sensitive_parameters", []):
+                    result_text.insert(tk.END, f"  ↳ {sp}\n", "bullet_yellow")
+
+        else:
+            result_text.insert(tk.END, "⚠️ NO QUALIFIED CANDIDATES FOUND\n", "infeasible_title")
+            result_text.insert(tk.END, "No vehicle in the database satisfies all mandatory mission constraints.\n\n", "bullet_red")
+
+        # Infeasible Candidates Diagnostic
+        if infeasible_list:
+            result_text.insert(tk.END, "\n" + "-" * 68 + "\n", "separator")
+            result_text.insert(tk.END, f"DISQUALIFIED CANDIDATES ({len(infeasible_list)} vehicles failed Stage 1 Gatekeeper):\n", "heading_small")
+            for inf in infeasible_list:
+                reasons = inf.get("explanation", {}).get("failed_constraints", ["Failed constraints"])
+                result_text.insert(tk.END, f"  ✕  {inf['vehicle_name']}: ", "bullet_red")
+                result_text.insert(tk.END, f"{'; '.join(reasons)}\n", "infeasible_text")
+
+        status_label.config(
+            text=f"● Analysis complete. {len(feasible_list)} qualified, {len(infeasible_list)} disqualified"
         )
-
-        status_label.config(text=f"● Analysis complete. {len(results)} vehicles evaluated")
         
         root.update_idletasks()
         outer_canvas.configure(scrollregion=outer_canvas.bbox("all"))
-        outer_canvas.yview_moveto(1.0)
+        outer_canvas.yview_moveto(0.0)
 
     except Exception as e:
         error_msg = traceback.format_exc()
@@ -298,8 +349,8 @@ payload_entry = tk.Entry(
 payload_entry.grid(row=5, column=1, sticky="w", padx=20, pady=7)
 create_priority(5, "Payload")
 
-# 4. Operating Range
-tk.Label(requirements_frame, text="Operating Range (km)", bg=CARD, fg=TEXT, font=("Segoe UI", 10)).grid(row=6, column=0, sticky="w", padx=20, pady=7)
+# 4. Mission Distance
+tk.Label(requirements_frame, text="Mission Distance (km)", bg=CARD, fg=TEXT, font=("Segoe UI", 10)).grid(row=6, column=0, sticky="w", padx=20, pady=7)
 range_entry = tk.Entry(
     requirements_frame,
     width=33,
@@ -428,14 +479,22 @@ result_text.configure(yscrollcommand=result_scrollbar.set)
 result_text.tag_configure("title", foreground=ACCENT, font=("Segoe UI", 15, "bold"))
 result_text.tag_configure("subtitle", foreground=TEXT_SECONDARY, font=("Segoe UI", 9))
 result_text.tag_configure("heading", foreground=TEXT, font=("Segoe UI", 11, "bold"))
+result_text.tag_configure("heading_small", foreground=TEXT, font=("Segoe UI", 10, "bold"))
+result_text.tag_configure("meta_text", foreground=TEXT_SECONDARY, font=("Consolas", 9))
+result_text.tag_configure("table_header", foreground=ACCENT, font=("Consolas", 10, "bold"))
 result_text.tag_configure("rank", foreground=TEXT_SECONDARY, font=("Consolas", 10, "bold"))
-result_text.tag_configure("vehicle", foreground=TEXT, font=("Consolas", 10))
-result_text.tag_configure("score", foreground=ACCENT, font=("Consolas", 10, "bold"))
+result_text.tag_configure("vehicle", foreground=TEXT, font=("Consolas", 10, "bold"))
+result_text.tag_configure("score", foreground=SUCCESS, font=("Consolas", 10, "bold"))
 result_text.tag_configure("separator", foreground=BORDER)
 result_text.tag_configure("recommendation_title", foreground=SUCCESS, font=("Segoe UI", 12, "bold"))
 result_text.tag_configure("recommendation_vehicle", foreground=TEXT, font=("Segoe UI", 16, "bold"))
 result_text.tag_configure("recommendation_score", foreground=SUCCESS, font=("Segoe UI", 12, "bold"))
-result_text.tag_configure("recommendation_note", foreground=TEXT_SECONDARY, font=("Segoe UI", 9))
+result_text.tag_configure("recommendation_note", foreground=TEXT, font=("Segoe UI", 9))
+result_text.tag_configure("bullet_green", foreground=SUCCESS, font=("Segoe UI", 9))
+result_text.tag_configure("bullet_yellow", foreground="#FBBF24", font=("Segoe UI", 9))
+result_text.tag_configure("bullet_red", foreground="#F87171", font=("Segoe UI", 9))
+result_text.tag_configure("infeasible_title", foreground="#F87171", font=("Segoe UI", 11, "bold"))
+result_text.tag_configure("infeasible_text", foreground=TEXT_SECONDARY, font=("Segoe UI", 9))
 
 status_frame = tk.Frame(page_frame, bg=BG)
 status_frame.pack(fill="x", padx=35, pady=(0, 12))

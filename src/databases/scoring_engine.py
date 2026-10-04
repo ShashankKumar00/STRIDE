@@ -1,161 +1,389 @@
 # Scoring Engine for STRIDE
+# Implements Two-Stage Decision Framework (Phase 3 & 5)
+# Stage 1: Deterministic Feasibility Gatekeeper Filter
+# Stage 2: Normalized Multi-Criteria Preference Scoring & Ranking
+# Result Explanation Generator (Phase 6)
 
-def score_requirement(vehicle_value, required_value):
+def derive_mission_parameters(requirements):
+    """
+    Derives internal mission metrics from visible user inputs.
+    
+    Args:
+        requirements (dict): User mission configuration dictionary.
+        
+    Returns:
+        dict: Derived engineering parameters including required speed and route margins.
+    """
+    distance = float(requirements.get("Operating Range", requirements.get("Mission Distance", 0.0)))
+    max_time = float(requirements.get("Maximum Mission Time", 0.0))
+    min_time = float(requirements.get("Minimum Mission Time", 0.0))
+    
+    required_speed = (distance / max_time) if (max_time > 0 and distance > 0) else 0.0
+    tactical_range_req = distance * 1.25  # 25% tactical detour/reserve margin
+    
+    return {
+        "mission_distance": distance,
+        "max_time": max_time,
+        "min_time": min_time,
+        "required_speed": required_speed,
+        "tactical_range_req": tactical_range_req
+    }
+
+
+def evaluate_hard_constraints(vehicle, requirements, derived):
+    """
+    Stage 1 Gatekeeper: Evaluates non-negotiable physical and tactical constraints.
+    
+    Returns:
+        tuple: (is_feasible: bool, failed_constraints: list of str)
+    """
+    failed = []
+    
+    # 1. Mission Role Compatibility
+    req_role = requirements.get("Mission Role")
+    if req_role:
+        supported_roles = vehicle.get("mission_roles", vehicle.get("role", []))
+        # Case-insensitive match check
+        normalized_supported = [r.strip().lower() for r in supported_roles]
+        if req_role.strip().lower() not in normalized_supported:
+            failed.append(f"Mission Role mismatch: vehicle does not support '{req_role}'")
+            
+    # 2. Terrain Compatibility
+    req_terrain = requirements.get("Terrain")
+    if req_terrain:
+        supported_terrains = vehicle.get("terrain_capabilities", vehicle.get("terrain", []))
+        normalized_terrains = [t.strip().lower() for t in supported_terrains]
+        # Check direct or "all terrain" match
+        req_norm = req_terrain.strip().lower()
+        if (req_norm not in normalized_terrains) and ("all terrain" not in normalized_terrains):
+            failed.append(f"Terrain incompatible: cannot operate on '{req_terrain}'")
+            
+    # 3. Payload Capacity Check
+    req_payload = float(requirements.get("Payload", 0.0))
+    veh_payload = vehicle.get("payload_capacity_kg", vehicle.get("payload_capacity"))
+    if veh_payload is None or veh_payload == "N/A" or veh_payload == "Mission-specific":
+        # Missing payload: cannot verify safety for positive payload missions
+        if req_payload > 0:
+            failed.append(f"Payload unverified: capacity is unknown/mission-specific, cannot guarantee {req_payload} kg")
+    else:
+        try:
+            if float(veh_payload) < req_payload:
+                failed.append(f"Insufficient payload: capacity {veh_payload} kg < required {req_payload} kg")
+        except (ValueError, TypeError):
+            failed.append("Invalid payload specification in vehicle database")
+            
+    # 4. Operating Range Check
+    distance = derived["mission_distance"]
+    veh_range = vehicle.get("operating_range_km", vehicle.get("operating_range"))
+    if veh_range is None or veh_range == "N/A":
+        failed.append(f"Range unverified: vehicle range is unknown, cannot verify {distance} km mission")
+    else:
+        try:
+            if float(veh_range) < distance:
+                failed.append(f"Insufficient range: operating range {veh_range} km < mission distance {distance} km")
+        except (ValueError, TypeError):
+            failed.append("Invalid range specification in vehicle database")
+            
+    # 5. Speed / Time Ceiling Check
+    req_speed = derived["required_speed"]
+    veh_speed = vehicle.get("max_speed_kmh", vehicle.get("max_speed", 0.0))
+    try:
+        veh_speed = float(veh_speed)
+        if veh_speed < req_speed:
+            failed.append(f"Insufficient speed: max speed {veh_speed} km/h cannot beat deadline ({req_speed:.1f} km/h needed)")
+    except (ValueError, TypeError):
+        failed.append("Invalid speed specification in vehicle database")
+
+    return (len(failed) == 0), failed
+
+
+def score_capability(vehicle_value, required_value):
+    """
+    Standard benefit score capped at 100% per Master Specification (Section 7 & 30).
+    """
     if required_value <= 0:
-        return 0
+        return 100.0
+    if vehicle_value is None or vehicle_value == "N/A":
+        return None
     try:
-        vehicle_value = float(vehicle_value)
-        required_value = float(required_value)
+        val = float(vehicle_value)
+        req = float(required_value)
     except (ValueError, TypeError):
-        return 0
-    score = (vehicle_value / required_value) * 100
-    return min(score, 100)
+        return None
+    return min((val / req) * 100.0, 100.0)
 
-def score_terrain(vehicle_terrain, required_terrain):
-    if not vehicle_terrain:
-        return 0
-    if isinstance(vehicle_terrain, list):
-        return 100 if required_terrain in vehicle_terrain else 0
-    return 100 if required_terrain == vehicle_terrain else 0
 
-def score_mission_role(vehicle, required_role):
-    supported_roles = vehicle.get("mission_roles", [])
-    if isinstance(supported_roles, list) and required_role in supported_roles:
-        return 100
-    return 0
-
-def score_mission_time(mission_distance, vehicle_speed, minimum_time, maximum_time):
-    if (
-        mission_distance <= 0
-        or vehicle_speed <= 0
-        or minimum_time <= 0
-        or maximum_time <= 0
-    ):
-        return 0
-
+def score_mission_time(mission_distance, vehicle_speed, min_time, max_time):
+    """
+    Evaluates mission duration compliance. Fast completion is not penalized
+    unless a positive minimum loiter time is explicitly required.
+    """
+    if mission_distance <= 0 or vehicle_speed <= 0 or max_time <= 0:
+        return 0.0
+    
     estimated_time = mission_distance / vehicle_speed
+    
+    # Within valid window
+    if min_time <= estimated_time <= max_time:
+        return 100.0
+    
+    # Exceeded deadline
+    if estimated_time > max_time:
+        excess = estimated_time - max_time
+        return max(0.0, min(100.0, (max_time / (max_time + excess)) * 100.0))
+        
+    # Completed earlier than min_time: only penalize if min_time > 0 and loiter mandatory
+    if min_time > 0 and estimated_time < min_time:
+        diff = min_time - estimated_time
+        return max(0.0, min(100.0, (min_time / (min_time + diff)) * 100.0))
+        
+    return 100.0
 
-    if minimum_time <= estimated_time <= maximum_time:
-        return 100
 
-    if estimated_time > maximum_time:
-        excess_time = estimated_time - maximum_time
-        score = (maximum_time / (maximum_time + excess_time)) * 100
-        return max(0, min(score, 100))
-
-    if estimated_time < minimum_time:
-        difference = minimum_time - estimated_time
-        score = (minimum_time / (minimum_time + difference)) * 100
-        return max(0, min(score, 100))
-
-    return 0
-
-def calculate_required_speed(mission_distance, maximum_time):
-    if mission_distance <= 0 or maximum_time <= 0:
-        return 0
-    return mission_distance / maximum_time
-
-def score_speed(vehicle_speed, required_speed):
-    if required_speed <= 0:
-        return 0
-    try:
-        vehicle_speed = float(vehicle_speed)
-    except (ValueError, TypeError):
-        return 0
-    score = (vehicle_speed / required_speed) * 100
-    return min(score, 100)
-
-def calculate_vehicle_score(vehicle, requirements, weights):
+def calculate_vehicle_score(vehicle, requirements, weights, derived):
+    """
+    Stage 2 Preference Scoring for Feasible Vehicles.
+    
+    Computes normalized parameter scores, handles missing data neutrally,
+    and calculates weighted suitability score.
+    """
     scores = {}
-
-    scores["Mission Role"] = score_mission_role(
-        vehicle,
-        requirements.get("Mission Role", "")
+    applicable_weights = {}
+    
+    # 1. Mission Role Score (100% for feasible vehicles)
+    scores["Mission Role"] = 100.0
+    applicable_weights["Mission Role"] = weights.get("Mission Role", 3.0)
+    
+    # 2. Terrain Compatibility Score (100% for feasible vehicles)
+    scores["Terrain"] = 100.0
+    applicable_weights["Terrain"] = weights.get("Terrain", 3.0)
+    
+    # 3. Payload Score
+    veh_payload = vehicle.get("payload_capacity_kg", vehicle.get("payload_capacity"))
+    p_score = score_capability(veh_payload, requirements.get("Payload", 0.0))
+    if p_score is not None:
+        scores["Payload"] = p_score
+        applicable_weights["Payload"] = weights.get("Payload", 3.0)
+    else:
+        scores["Payload"] = 100.0  # Neutral treatment for feasible
+        applicable_weights["Payload"] = weights.get("Payload", 3.0) * 0.5  # Lower weight on uncertainty
+        
+    # 4. Operating Range Score
+    veh_range = vehicle.get("operating_range_km", vehicle.get("operating_range"))
+    r_score = score_capability(veh_range, derived["mission_distance"])
+    if r_score is not None:
+        scores["Operating Range"] = r_score
+        applicable_weights["Operating Range"] = weights.get("Operating Range", 3.0)
+    else:
+        scores["Operating Range"] = 100.0
+        applicable_weights["Operating Range"] = weights.get("Operating Range", 3.0) * 0.5
+        
+    # 5. Mission Time Window Score
+    veh_speed = float(vehicle.get("max_speed_kmh", vehicle.get("max_speed", 0.0)))
+    t_score = score_mission_time(
+        derived["mission_distance"],
+        veh_speed,
+        derived["min_time"],
+        derived["max_time"]
     )
-
-    scores["Terrain"] = score_terrain(
-        vehicle.get("terrain", []),
-        requirements.get("Terrain", "")
-    )
-
-    scores["Payload"] = score_requirement(
-        vehicle.get("payload_capacity", vehicle.get("payload", 0)),
-        requirements.get("Payload", 0)
-    )
-
-    scores["Operating Range"] = score_requirement(
-        vehicle.get("operating_range", vehicle.get("range", 0)),
-        requirements.get("Operating Range", 0)
-    )
-
-    vehicle_speed = vehicle.get("max_speed", vehicle.get("speed", 0))
-
-    scores["Minimum Mission Time"] = score_mission_time(
-        requirements.get("Operating Range", 0),
-        vehicle_speed,
-        requirements.get("Minimum Mission Time", 0),
-        requirements.get("Maximum Mission Time", 0)
-    )
-    scores["Maximum Mission Time"] = scores["Minimum Mission Time"]
-
-    required_speed = calculate_required_speed(
-        requirements.get("Operating Range", 0),
-        requirements.get("Maximum Mission Time", 0)
-    )
-    scores["Internal Speed"] = score_speed(
-        vehicle_speed,
-        required_speed
-    )
-
-    scores["Endurance Check"] = score_requirement(
-        vehicle.get("endurance", 0),
-        requirements.get("Endurance", 0)
-    )
-
-    weighted_score = 0
-    total_weight = 0
-
-    for parameter in ["Mission Role", "Terrain", "Payload", "Operating Range"]:
-        weight = weights.get(parameter, 0)
-        weighted_score += scores[parameter] * weight
-        total_weight += weight
-
-    min_time_weight = weights.get("Minimum Mission Time", 0)
-    max_time_weight = weights.get("Maximum Mission Time", 0)
-    mission_time_weight = min_time_weight + max_time_weight
-
-    weighted_score += scores["Minimum Mission Time"] * mission_time_weight
-    total_weight += mission_time_weight
-
-    speed_weight = max_time_weight
-    endurance_weight = weights.get("Endurance", 0)
-
-    weighted_score += scores["Internal Speed"] * speed_weight
-    weighted_score += scores["Endurance Check"] * endurance_weight
-
-    total_weight += speed_weight
-    total_weight += endurance_weight
-
-    final_score = (weighted_score / total_weight) if total_weight > 0 else 0
+    scores["Mission Time"] = t_score
+    time_weight = (weights.get("Minimum Mission Time", 3.0) + weights.get("Maximum Mission Time", 3.0)) / 2.0
+    applicable_weights["Mission Time"] = time_weight
+    
+    # 6. Internal Speed Margin Score
+    req_speed = derived["required_speed"]
+    s_score = score_capability(veh_speed, req_speed)
+    scores["Internal Speed"] = s_score if s_score is not None else 0.0
+    applicable_weights["Internal Speed"] = weights.get("Maximum Mission Time", 3.0)
+    
+    # 7. Endurance Persistence Score
+    veh_endurance = vehicle.get("endurance_hours", vehicle.get("endurance"))
+    estimated_time = (derived["mission_distance"] / veh_speed) if veh_speed > 0 else 1.0
+    e_score = score_capability(veh_endurance, estimated_time)
+    if e_score is not None:
+        scores["Endurance"] = e_score
+        applicable_weights["Endurance"] = weights.get("Endurance", 3.0)
+    else:
+        # Unknown endurance: excluded from weight so candidate is not unfairly penalized
+        scores["Endurance"] = None
+        
+    # Aggregate weighted score
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for param, score in scores.items():
+        if score is not None and param in applicable_weights:
+            w = applicable_weights[param]
+            weighted_sum += score * w
+            total_weight += w
+            
+    final_score = (weighted_sum / total_weight) if total_weight > 0 else 0.0
     return final_score, scores
 
+
+def generate_explanation(vehicle, scores, is_feasible, failed_constraints, requirements, derived):
+    """
+    Phase 6: Generates transparent, data-driven plain-text explanation for the recommendation.
+    """
+    if not is_feasible:
+        return {
+            "status": "Infeasible",
+            "summary": "Vehicle cannot safely execute this mission.",
+            "failed_constraints": failed_constraints,
+            "strengths": [],
+            "weaknesses": failed_constraints
+        }
+        
+    strengths = []
+    weaknesses = []
+    
+    veh_payload = vehicle.get("payload_capacity_kg")
+    req_payload = requirements.get("Payload", 0.0)
+    if veh_payload is not None and veh_payload >= req_payload * 1.5:
+        strengths.append(f"Generous payload capacity ({veh_payload} kg vs {req_payload} kg required)")
+    elif veh_payload is not None:
+        strengths.append(f"Meets payload requirement ({veh_payload} kg)")
+        
+    veh_range = vehicle.get("operating_range_km")
+    distance = derived["mission_distance"]
+    if veh_range is not None and veh_range >= distance * 2.0:
+        strengths.append(f"High range reserve ({veh_range} km vs {distance} km mission)")
+    elif veh_range is not None:
+        strengths.append(f"Sufficient operating range ({veh_range} km)")
+        
+    veh_speed = vehicle.get("max_speed_kmh", 0.0)
+    req_speed = derived["required_speed"]
+    if veh_speed >= req_speed * 1.5:
+        strengths.append(f"High speed margin ({veh_speed} km/h vs {req_speed:.1f} km/h needed)")
+        
+    veh_endurance = vehicle.get("endurance_hours")
+    if veh_endurance is not None:
+        strengths.append(f"Documented endurance of {veh_endurance} hours")
+    else:
+        weaknesses.append("Endurance specification is unverified/unknown")
+        
+    summary = f"Strong multi-criteria match achieving high compatibility across mission role, terrain, and operational parameters."
+    
+    return {
+        "status": "Feasible",
+        "summary": summary,
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "failed_constraints": []
+    }
+
+
 def rank_vehicles(vehicles, requirements, weights):
-    results = []
+    """
+    Executes the full Two-Stage STRIDE Decision Pipeline.
+    
+    1. Validates inputs & derives mission parameters.
+    2. Filters vehicles via Stage 1 Gatekeeper.
+    3. Scores feasible candidates via Stage 2 MCDM Preference Engine.
+    4. Generates transparent explanations.
+    5. Returns sorted feasible list and diagnostic infeasible list.
+    """
+    derived = derive_mission_parameters(requirements)
+    
+    feasible_results = []
+    infeasible_results = []
+    
     if not isinstance(vehicles, list):
-        return results
-
+        return feasible_results
+        
     for vehicle in vehicles:
-        final_score, scores = calculate_vehicle_score(
-            vehicle,
-            requirements,
-            weights
-        )
-        results.append({
-            "vehicle_id": vehicle.get("vehicle_id", "N/A"),
-            "vehicle_name": vehicle.get("vehicle_name", "Unknown Vehicle"),
-            "final_score": final_score,
-            "scores": scores
-        })
+        is_feasible, failed_constraints = evaluate_hard_constraints(vehicle, requirements, derived)
+        
+        if is_feasible:
+            final_score, scores = calculate_vehicle_score(vehicle, requirements, weights, derived)
+            explanation = generate_explanation(vehicle, scores, True, [], requirements, derived)
+            
+            feasible_results.append({
+                "vehicle_id": vehicle.get("vehicle_id", "N/A"),
+                "vehicle_name": vehicle.get("vehicle_name", "Unknown Vehicle"),
+                "is_feasible": True,
+                "final_score": final_score,
+                "scores": scores,
+                "explanation": explanation,
+                "details": vehicle
+            })
+        else:
+            explanation = generate_explanation(vehicle, {}, False, failed_constraints, requirements, derived)
+            infeasible_results.append({
+                "vehicle_id": vehicle.get("vehicle_id", "N/A"),
+                "vehicle_name": vehicle.get("vehicle_name", "Unknown Vehicle"),
+                "is_feasible": False,
+                "final_score": 0.0,
+                "scores": {},
+                "explanation": explanation,
+                "details": vehicle
+            })
+            
+    # Sort feasible descending by score
+    feasible_results.sort(key=lambda x: x["final_score"], reverse=True)
+    
+    # Phase 7: Sensitivity Analysis
+    sensitivity = perform_sensitivity_analysis(vehicles, requirements, weights, feasible_results)
+    
+    # Return feasible results with metadata attached
+    return {
+        "feasible": feasible_results,
+        "infeasible": infeasible_results,
+        "derived": derived,
+        "sensitivity": sensitivity
+    }
 
-    results.sort(key=lambda x: x["final_score"], reverse=True)
-    return results
+
+def perform_sensitivity_analysis(vehicles, requirements, base_weights, feasible_results):
+    """
+    Phase 7: Evaluates recommendation robustness under priority perturbations.
+    """
+    if len(feasible_results) <= 1:
+        return {
+            "is_stable": True,
+            "margin_of_victory": 0.0,
+            "sensitive_parameters": [],
+            "summary": "Single qualified candidate; recommendation is inherently stable."
+        }
+        
+    top_name = feasible_results[0]["vehicle_name"]
+    second_name = feasible_results[1]["vehicle_name"] if len(feasible_results) > 1 else ""
+    margin = (feasible_results[0]["final_score"] - feasible_results[1]["final_score"]) if len(feasible_results) > 1 else 0.0
+    sensitive = []
+    
+    test_params = ["Payload", "Operating Range", "Maximum Mission Time"]
+    
+    derived = derive_mission_parameters(requirements)
+    
+    for param in test_params:
+        orig_w = base_weights.get(param, 3.0)
+        
+        for shift, label in [(2.0, "increased (+2)"), (-2.0, "decreased (-2)")]:
+            test_w = dict(base_weights)
+            test_w[param] = max(1.0, min(5.0, orig_w + shift))
+            
+            # Re-score feasible candidates under perturbed weight
+            perturbed_scores = []
+            for item in feasible_results:
+                veh = item["details"]
+                sc, _ = calculate_vehicle_score(veh, requirements, test_w, derived)
+                perturbed_scores.append((veh["vehicle_name"], sc))
+                
+            perturbed_scores.sort(key=lambda x: x[1], reverse=True)
+            if perturbed_scores and perturbed_scores[0][0] != top_name:
+                sensitive.append(
+                    f"Sensitive to {param} ({label}): {perturbed_scores[0][0]} ranks #1"
+                )
+                break
+                
+    is_stable = (len(sensitive) == 0)
+    if is_stable:
+        summary = f"Robust recommendation. {top_name} leads by a {margin:.1f}% margin of victory."
+    else:
+        summary = f"Recommendation sensitivity detected ({len(sensitive)} parameter shift(s) alter rank #1)."
+        
+    return {
+        "is_stable": is_stable,
+        "margin_of_victory": margin,
+        "sensitive_parameters": sensitive,
+        "summary": summary
+    }
