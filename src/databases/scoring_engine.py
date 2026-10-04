@@ -40,23 +40,73 @@ def evaluate_hard_constraints(vehicle, requirements, derived):
     failed = []
     
     # 1. Mission Role Compatibility
-    req_role = requirements.get("Mission Role")
-    if req_role:
+    req_roles = requirements.get("Mission Roles")
+    if req_roles and isinstance(req_roles, list):
         supported_roles = vehicle.get("mission_roles", vehicle.get("role", []))
-        # Case-insensitive match check
         normalized_supported = [r.strip().lower() for r in supported_roles]
-        if req_role.strip().lower() not in normalized_supported:
-            failed.append(f"Mission Role mismatch: vehicle does not support '{req_role}'")
+        matched = [r for r in req_roles if r.strip().lower() in normalized_supported]
+        if not matched:
+            failed.append(f"Mission Role mismatch: vehicle does not support any of {req_roles}")
+    else:
+        req_role = requirements.get("Mission Role")
+        if req_role:
+            supported_roles = vehicle.get("mission_roles", vehicle.get("role", []))
+            normalized_supported = [r.strip().lower() for r in supported_roles]
+            if req_role.strip().lower() not in normalized_supported:
+                failed.append(f"Mission Role mismatch: vehicle does not support '{req_role}'")
             
     # 2. Terrain Compatibility
     req_terrain = requirements.get("Terrain")
     if req_terrain:
         supported_terrains = vehicle.get("terrain_capabilities", vehicle.get("terrain", []))
         normalized_terrains = [t.strip().lower() for t in supported_terrains]
-        # Check direct or "all terrain" match
         req_norm = req_terrain.strip().lower()
         if (req_norm not in normalized_terrains) and ("all terrain" not in normalized_terrains):
             failed.append(f"Terrain incompatible: cannot operate on '{req_terrain}'")
+
+    # 2b. Tactical Standoff / Control Range Check
+    req_standoff = requirements.get("Standoff Distance")
+    if req_standoff is not None:
+        try:
+            req_standoff_val = float(req_standoff)
+            if req_standoff_val > 0:
+                veh_standoff = vehicle.get("max_control_range_km")
+                if veh_standoff is not None and veh_standoff < req_standoff_val:
+                    failed.append(f"Insufficient control standoff: control range {veh_standoff} km < required {req_standoff_val} km")
+        except (ValueError, TypeError):
+            pass
+
+    # 2c. Operational Altitude Check
+    req_altitude = requirements.get("Operational Altitude")
+    if req_altitude is not None:
+        try:
+            req_alt_val = float(req_altitude)
+            if req_alt_val > 3000:
+                veh_alt = vehicle.get("climate_altitude", {}).get("max_altitude_m_asl")
+                if veh_alt is not None and veh_alt < req_alt_val:
+                    failed.append(f"Exceeds altitude ceiling: vehicle rated for {veh_alt} m ASL < required {int(req_alt_val)} m ASL")
+        except (ValueError, TypeError):
+            pass
+
+    # 2d. Operating Temperature Check
+    req_temp = requirements.get("Operating Temperature")
+    if req_temp is not None:
+        try:
+            req_t_val = float(req_temp)
+            clim = vehicle.get("climate_altitude", {})
+            min_t = clim.get("min_operating_temp_c", -20.0)
+            max_t = clim.get("max_operating_temp_c", 50.0)
+            if req_t_val < min_t or req_t_val > max_t:
+                failed.append(f"Temperature outside operational envelope ({min_t:.0f}°C to {max_t:.0f}°C vs mission {req_t_val:.0f}°C)")
+        except (ValueError, TypeError):
+            pass
+
+    # 2e. Stealth Profile Check
+    if requirements.get("Stealth Requirement") == "Silent Electric Only" or requirements.get("Stealth Required") is True:
+        prop = vehicle.get("stealth_profile", {}).get("propulsion_type", "")
+        if "diesel" in prop.lower() or "ic engine" in prop.lower():
+            failed.append("Acoustic/thermal stealth violation: platform uses internal combustion engine (signature too high)")
+
             
     # 3. Payload Capacity Check
     req_payload = float(requirements.get("Payload", 0.0))
@@ -260,6 +310,24 @@ def generate_explanation(vehicle, scores, is_feasible, failed_constraints, requi
         strengths.append(f"Documented endurance of {veh_endurance} hours")
     else:
         weaknesses.append("Endurance specification is unverified/unknown")
+
+    # Tactical standoff & stealth insights
+    veh_ctrl = vehicle.get("max_control_range_km")
+    if veh_ctrl is not None and veh_ctrl >= 5.0:
+        links = vehicle.get("control_link_types", [])
+        primary_link = links[0].split(" (")[0] if links else "RF Link"
+        strengths.append(f"Extended operator standoff ({veh_ctrl:.1f} km via {primary_link})")
+
+    veh_alt = vehicle.get("climate_altitude", {}).get("max_altitude_m_asl", 0)
+    if veh_alt >= 4500:
+        strengths.append(f"High-altitude certified up to {veh_alt} m ASL (Himalayan / Ladakh rated)")
+
+    prop = vehicle.get("stealth_profile", {}).get("propulsion_type", "")
+    if "electric" in prop.lower() and "silent" in prop.lower():
+        db = vehicle.get("stealth_profile", {}).get("acoustic_stealth_db_at_10m", 40.0)
+        strengths.append(f"Silent electric propulsion (Acoustic level ~{db:.0f} dBA at 10m)")
+    elif "diesel" in prop.lower():
+        weaknesses.append("Internal combustion engine creates higher acoustic/thermal signature")
         
     summary = f"Strong multi-criteria match achieving high compatibility across mission role, terrain, and operational parameters."
     
@@ -270,6 +338,7 @@ def generate_explanation(vehicle, scores, is_feasible, failed_constraints, requi
         "weaknesses": weaknesses,
         "failed_constraints": []
     }
+
 
 
 def rank_vehicles(vehicles, requirements, weights):

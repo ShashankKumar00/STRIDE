@@ -145,3 +145,55 @@ if __name__ == "__main__":
             "Maximum Mission Time": "Medium"
         }
     )
+
+    # Demo 3: Natural Language Mission Narrative Parsing & High-Altitude Tactical Evaluation
+    print("=" * 80)
+    print("NATURAL LANGUAGE MISSION NARRATIVE DEMO (PHASE 2 & 4 EXTENSIONS)")
+    print("=" * 80)
+    from mission.mission_parser import parse_mission_narrative
+    narrative = (
+        "Conduct high altitude reconnaissance and surveillance patrol in Ladakh at 16000 ft "
+        "in sub-zero snow terrain, carrying 50 kg sensor payload with silent electric stealth "
+        "and at least 8 km operator standoff within 3 hours."
+    )
+    print(f"INPUT FREE-TEXT NARRATIVE:\n  \"{narrative}\"\n")
+    parsed = parse_mission_narrative(narrative)
+    print("SMART PARSER EXTRACTION LOG:")
+    for log in parsed["confidence_log"]:
+        print(f"  [+] {log}")
+
+    print("\nPARSED MISSION REQUIREMENTS FOR SCORING ENGINE:")
+    print(f"  * Roles:       {parsed['roles']}")
+    print(f"  * Terrain:     {parsed['terrain']}")
+    print(f"  * Payload:     {parsed['payload_kg']} kg")
+    print(f"  * Distance:    {parsed['operating_range_km']} km")
+    print(f"  * Standoff:    {parsed['standoff_km']} km")
+    print(f"  * Altitude:    {parsed['altitude_m']} m ASL")
+    print(f"  * Temperature: {parsed['temperature_c']} deg C")
+    print(f"  * Stealth:     {parsed['stealth_required']} (Silent Electric)")
+
+    run_mission_demo(
+        title="High-Altitude Himalayan Reconnaissance (Parsed from Natural Language)",
+        requirements={
+            "Mission Role": parsed["roles"][0],
+            "Mission Roles": parsed["roles"],
+            "Terrain": parsed["terrain"],
+            "Payload": parsed["payload_kg"],
+            "Operating Range": parsed["operating_range_km"],
+            "Minimum Mission Time": parsed["min_time_hours"],
+            "Maximum Mission Time": parsed["max_time_hours"],
+            "Standoff Distance": parsed["standoff_km"],
+            "Operational Altitude": parsed["altitude_m"],
+            "Operating Temperature": parsed["temperature_c"],
+            "Stealth Requirement": "Silent Electric Only" if parsed["stealth_required"] else "Standard (Any Propulsion)"
+        },
+        priorities={
+            "Mission Role": "Very High",
+            "Terrain": "Very High",
+            "Payload": "High",
+            "Operating Range": "High",
+            "Minimum Mission Time": "Low",
+            "Maximum Mission Time": "High"
+        }
+    )
+
