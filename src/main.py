@@ -219,13 +219,17 @@ def calculate_results():
         messagebox.showerror("Invalid Input", "Please enter valid numbers.")
         return
 
-    # Multi-role extraction
-    selected_roles = [role for role, var in role_checkbox_vars.items() if var.get()]
-    if not selected_roles:
-        selected_roles = [primary_role_variable.get()]
+    # Multi-role extraction: Combine Primary Role with checked roles so primary is never discarded
+    primary_role = primary_role_variable.get().strip()
+    selected_roles = [primary_role] if primary_role else []
+    for role, var in role_checkbox_vars.items():
+        if var.get() and role not in selected_roles:
+            selected_roles.append(role)
+    if not selected_roles and primary_role:
+        selected_roles = [primary_role]
 
     requirements = {
-        "Mission Role": primary_role_variable.get(),
+        "Mission Role": primary_role,
         "Mission Roles": selected_roles,
         "Terrain": terrain_variable.get(),
         "Payload": payload,
@@ -363,22 +367,97 @@ def calculate_results():
                 for sp in sens.get("sensitive_parameters", []):
                     result_text.insert(tk.END, f"  ↳ {sp}\n", "bullet_yellow")
 
+        elif results.get("compromise"):
+            compromise_list = results["compromise"]
+            best_compromise = compromise_list[0]
+            v_details = best_compromise.get("details", {})
+            expl = best_compromise.get("explanation", {})
+
+            # Update Photo Preview with top compromise vehicle!
+            update_vehicle_image(
+                v_details.get("image_path", ""),
+                best_compromise["vehicle_name"],
+                v_details.get("manufacturer", "Indian Defense")
+            )
+
+            result_text.insert(tk.END, "=" * 68 + "\n", "separator")
+            result_text.insert(tk.END, "⚠️ NO 100% CANDIDATES — ADAPTIVE TRADE-OFF ACTIVATED\n\n", "infeasible_title")
+            result_text.insert(tk.END, "Notice: No platform in the database satisfies 100% of these parameters simultaneously.\n", "bullet_yellow")
+            result_text.insert(tk.END, "STRIDE has evaluated the closest operational compromises based on multi-criteria proximity:\n\n", "meta_text")
+
+            result_text.insert(tk.END, "★ RECOMMENDED OPERATIONAL COMPROMISE\n\n", "recommendation_title")
+            result_text.insert(tk.END, f"{best_compromise['vehicle_name']}   ({best_compromise.get('vehicle_id', 'N/A')})\n", "recommendation_vehicle")
+            result_text.insert(tk.END, f"Trade-Off Suitability Score: {best_compromise['final_score']:.2f}%   |   Compliance: {best_compromise.get('compliance_text', '')}\n", "recommendation_score")
+            result_text.insert(tk.END, f"Manufacturer: {v_details.get('manufacturer', 'Unknown')}   |   Mobility: {v_details.get('mobility_type', 'N/A')}\n\n", "meta_text")
+
+            result_text.insert(tk.END, "WHY RECOMMENDED (BEST AVAILABLE OPERATIONAL FIT):\n", "heading_small")
+            result_text.insert(tk.END, f"• {expl.get('summary', 'Closest physical match to specified mission parameters.')}\n\n", "recommendation_note")
+
+            if expl.get("strengths"):
+                result_text.insert(tk.END, "TACTICAL CAPABILITIES SATISFIED:\n", "heading_small")
+                for s in expl["strengths"]:
+                    result_text.insert(tk.END, f"  ✓  {s}\n", "bullet_green")
+                result_text.insert(tk.END, "\n")
+
+            if expl.get("compromises"):
+                result_text.insert(tk.END, "REQUIRED OPERATIONAL COMPROMISES / TACTICAL TRADE-OFFS:\n", "heading_small")
+                for c in expl["compromises"]:
+                    result_text.insert(tk.END, f"  ⚠  {c}\n", "bullet_yellow")
+                result_text.insert(tk.END, "\n")
+
+            route_info = best_compromise.get("route_info", {})
+            if route_info:
+                result_text.insert(tk.END, "TERRAIN & ROUTE FEASIBILITY:\n", "heading_small")
+                eff_d = route_info.get("effective_distance_km", operating_range)
+                eff_spd = route_info.get("effective_speed_kmh", v_details.get('max_speed_kmh', 0))
+                t_dur = route_info.get("transit_duration_hours", 0)
+                result_text.insert(tk.END, f"  • Detour-Adjusted Route: {eff_d:.1f} km   |   Effective Speed: {eff_spd:.1f} km/h   |   Estimated Transit: {t_dur:.2f} h\n\n", "meta_text")
+
+            result_text.insert(tk.END, "=" * 68 + "\n\n", "separator")
+
+            # Compromise Ranking Table
+            result_text.insert(tk.END, f"TOP COMPROMISE CANDIDATES ({len(compromise_list[:5])} Near-Miss Alternatives)\n", "heading")
+            result_text.insert(tk.END, "-" * 68 + "\n", "separator")
+            result_text.insert(tk.END, f"{'RK':<4}{'VEHICLE':<24}{'MATCH':<12}{'COMPLIANCE':<16}{'PRIMARY COMPROMISE':<30}\n", "table_header")
+            result_text.insert(tk.END, "-" * 68 + "\n", "separator")
+
+            for index, vehicle in enumerate(compromise_list[:5], start=1):
+                score = vehicle["final_score"]
+                v_name = vehicle["vehicle_name"]
+                comp = vehicle.get("compliance_text", "")
+                shortfall = vehicle.get("primary_shortfall", "")
+                result_text.insert(tk.END, f"{index:<4}", "rank")
+                result_text.insert(tk.END, f"{v_name:<24}", "vehicle")
+                result_text.insert(tk.END, f"{score:>6.1f}%    ", "score")
+                result_text.insert(tk.END, f"{comp:<16}", "meta_text")
+                result_text.insert(tk.END, f"{shortfall:<30}\n", "bullet_yellow")
+
+            result_text.insert(tk.END, "\n" + "-" * 68 + "\n", "separator")
         else:
-            result_text.insert(tk.END, "⚠️ NO QUALIFIED CANDIDATES FOUND\n", "infeasible_title")
-            result_text.insert(tk.END, "No vehicle in the database satisfies all mandatory physical and tactical constraints.\n\n", "bullet_red")
+            result_text.insert(tk.END, "⚠️ NO CANDIDATES FOUND\n", "infeasible_title")
+            result_text.insert(tk.END, "No vehicle in the database satisfies mission constraints.\n\n", "bullet_red")
 
         # Infeasible Candidates Diagnostic
         if infeasible_list:
             result_text.insert(tk.END, "\n" + "-" * 68 + "\n", "separator")
-            result_text.insert(tk.END, f"DISQUALIFIED CANDIDATES ({len(infeasible_list)} vehicles failed Stage 1 Gatekeeper):\n", "heading_small")
+            result_text.insert(tk.END, f"GATEKEEPER REJECTIONS ({len(infeasible_list)} vehicles with constraint mismatches):\n", "heading_small")
             for inf in infeasible_list:
                 reasons = inf.get("explanation", {}).get("failed_constraints", ["Failed constraints"])
                 result_text.insert(tk.END, f"  ✕  {inf['vehicle_name']}: ", "bullet_red")
                 result_text.insert(tk.END, f"{'; '.join(reasons)}\n", "infeasible_text")
 
-        status_label.config(
-            text=f"● Analysis complete. {len(feasible_list)} qualified, {len(infeasible_list)} disqualified (Total: {len(catalog)})"
-        )
+        if feasible_list:
+            status_label.config(
+                text=f"● Analysis complete. {len(feasible_list)} qualified, {len(infeasible_list)} disqualified (Total: {len(catalog)})"
+            )
+        elif results.get("compromise"):
+            status_label.config(
+                text=f"⚠ Zero 100% matches. Adaptive Trade-Off active: top alternative is {results['compromise'][0]['vehicle_name']} ({results['compromise'][0]['final_score']:.1f}%)"
+            )
+        else:
+            status_label.config(
+                text=f"● No candidates found (Total catalog: {len(catalog)})"
+            )
         
         root.update_idletasks()
         outer_canvas.configure(scrollregion=outer_canvas.bbox("all"))
@@ -881,13 +960,13 @@ tactical_frame = tk.Frame(page_frame, bg=CARD, highlightbackground=BORDER, highl
 tactical_frame.pack(fill="x", padx=35, pady=8)
 
 tk.Label(tactical_frame, text="ADVANCED TACTICAL PARAMETERS (PHASE 2 - 4 EXTENSIONS)", bg=CARD, fg=TEXT, font=("Segoe UI", 11, "bold")).pack(anchor="w")
-tk.Label(tactical_frame, text="Refine operator standoff, high-altitude tolerance, and acoustic stealth envelopes.", bg=CARD, fg=TEXT_SECONDARY, font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 10))
+tk.Label(tactical_frame, text="Refine operator standoff, high-altitude tolerance, and acoustic stealth envelopes. (Adaptive Trade-Off automatically evaluates best compromises if zero 100% matches).", bg=CARD, fg=TEXT_SECONDARY, font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 10))
 
 tac_grid = tk.Frame(tactical_frame, bg=CARD)
 tac_grid.pack(fill="x")
 
 # Row 1: Standoff Distance & Link
-tk.Label(tac_grid, text="Operator Standoff (km):", bg=CARD, fg=TEXT, font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=4)
+tk.Label(tac_grid, text="Operator Standoff (km) [Max 25km RF]:", bg=CARD, fg=TEXT, font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", pady=4)
 standoff_entry = tk.Entry(tac_grid, width=15, bg=INPUT_BG, fg=TEXT, insertbackground=TEXT, relief="flat", highlightbackground=BORDER, highlightcolor=ACCENT, highlightthickness=1, font=("Segoe UI", 9))
 standoff_entry.insert(0, "5.0")
 standoff_entry.grid(row=0, column=1, sticky="w", padx=(5, 25), pady=4)

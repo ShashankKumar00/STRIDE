@@ -405,14 +405,192 @@ def rank_vehicles(vehicles, requirements, weights):
     
     # Phase 7: Sensitivity Analysis
     sensitivity = perform_sensitivity_analysis(vehicles, requirements, weights, feasible_results)
+
+    # Phase 8: Adaptive Trade-Off Analysis (Fallback when 0 candidates meet 100% hard constraints)
+    compromise_results = []
+    if not feasible_results and infeasible_results:
+        compromise_results = evaluate_compromise_candidates(vehicles, requirements, weights, derived, infeasible_results)
     
     # Return feasible results with metadata attached
     return {
         "feasible": feasible_results,
+        "compromise": compromise_results,
         "infeasible": infeasible_results,
         "derived": derived,
         "sensitivity": sensitivity
     }
+
+
+def evaluate_compromise_candidates(vehicles, requirements, weights, derived, infeasible_results):
+    """
+    Phase 8: Adaptive Trade-Off & Compromise Analysis.
+    When no platform achieves 100% compliance with strict gatekeepers, evaluates
+    partial compliance, scores closest near-miss platforms, and articulates specific
+    operational concessions / tactical trade-offs needed to accomplish the mission.
+    """
+    try:
+        from planning.route_planner import calculate_route_feasibility
+    except Exception:
+        calculate_route_feasibility = None
+
+    compromise_candidates = []
+    req_payload = float(requirements.get("Payload", 0.0))
+    req_range = derived.get("mission_distance", 0.0)
+    req_standoff = float(requirements.get("Standoff Distance") or 0.0)
+    req_terrain = requirements.get("Terrain", "")
+    req_roles = requirements.get("Mission Roles") or [requirements.get("Mission Role", "")]
+    if isinstance(req_roles, str):
+        req_roles = [req_roles]
+    req_stealth = requirements.get("Stealth Requirement", "")
+    req_alt = float(requirements.get("Operational Altitude") or 0.0)
+
+    for item in infeasible_results:
+        vehicle = item["details"]
+        failed_reasons = item["explanation"].get("failed_constraints", [])
+        
+        # Base scoring
+        base_score, cat_scores = calculate_vehicle_score(vehicle, requirements, weights, derived)
+        
+        # Approximate total criteria evaluated
+        total_criteria = 5
+        if req_standoff > 0:
+            total_criteria += 1
+        if req_alt > 3000:
+            total_criteria += 1
+        if req_stealth:
+            total_criteria += 1
+        if requirements.get("Operating Temperature") is not None:
+            total_criteria += 1
+            
+        met_count = max(0, total_criteria - len(failed_reasons))
+        compliance_ratio = max(0.15, met_count / total_criteria)
+        compliance_text = f"{int(compliance_ratio * 100)}% ({met_count}/{total_criteria} Met)"
+        
+        strengths_met = []
+        compromises_needed = []
+        deductions = 0.0
+        
+        # 1. Payload
+        veh_payload = vehicle.get("payload_capacity_kg")
+        try:
+            veh_payload_val = float(veh_payload) if veh_payload is not None else 0.0
+        except (ValueError, TypeError):
+            veh_payload_val = 0.0
+            
+        if veh_payload_val >= req_payload and req_payload > 0:
+            strengths_met.append(f"Payload Capacity: Rated for {veh_payload_val:.0f} kg (Satisfies required {req_payload:.0f} kg)")
+        elif req_payload > 0:
+            shortfall = req_payload - veh_payload_val
+            deductions += min(18.0, (shortfall / req_payload) * 18.0)
+            compromises_needed.append(f"Payload Limit: Rated for {veh_payload_val:.0f} kg vs {req_payload:.0f} kg required ({shortfall:.0f} kg shortfall) — Reduce sensor kit weight or split mission across tandem UGVs.")
+            
+        # 2. Operating Range
+        veh_range = vehicle.get("operating_range_km")
+        try:
+            veh_range_val = float(veh_range) if veh_range is not None else 0.0
+        except (ValueError, TypeError):
+            veh_range_val = 0.0
+            
+        if veh_range_val >= req_range and req_range > 0:
+            strengths_met.append(f"Operating Range: Rated for {veh_range_val:.0f} km (Exceeds mission distance {req_range:.0f} km)")
+        elif req_range > 0:
+            shortfall = req_range - veh_range_val
+            deductions += min(16.0, (shortfall / req_range) * 16.0)
+            compromises_needed.append(f"Transit Range: {veh_range_val:.0f} km available vs {req_range:.0f} km required ({shortfall:.0f} km deficit) — Requires intermediate battery depot or mobile recharging node.")
+
+        # 3. Operator Standoff
+        veh_standoff = vehicle.get("max_control_range_km")
+        try:
+            veh_standoff_val = float(veh_standoff) if veh_standoff is not None else 0.0
+        except (ValueError, TypeError):
+            veh_standoff_val = 0.0
+            
+        if req_standoff > 0:
+            if veh_standoff_val >= req_standoff:
+                strengths_met.append(f"Operator Standoff: Control range {veh_standoff_val:.0f} km meets requested {req_standoff:.0f} km standoff")
+            else:
+                shortfall = req_standoff - veh_standoff_val
+                deductions += min(14.0, (shortfall / req_standoff) * 14.0)
+                compromises_needed.append(f"Operator Standoff Link: Direct RF link is {veh_standoff_val:.0f} km vs {req_standoff:.0f} km requested ({shortfall:.0f} km deficit) — Deploy with forward relay station, mesh node, or tactical drone repeater.")
+
+        # 4. Terrain
+        veh_terrains = [t.strip().lower() for t in vehicle.get("terrain_capabilities", [])]
+        if req_terrain.strip().lower() in veh_terrains or "all terrain" in veh_terrains:
+            strengths_met.append(f"Terrain Mobility: Confirmed fully certified for '{req_terrain}'")
+        else:
+            deductions += 15.0
+            compromises_needed.append(f"Terrain Certification: Platform not certified for '{req_terrain}' — Requires track cleat upgrades or ground-clearing escort.")
+
+        # 5. Roles
+        veh_roles = [r.strip().lower() for r in vehicle.get("mission_roles", [])]
+        matched_roles = [r for r in req_roles if r.strip().lower() in veh_roles]
+        if matched_roles:
+            strengths_met.append(f"Mission Roles: Directly supports requested operational roles ({', '.join(matched_roles)})")
+        else:
+            deductions += 12.0
+            compromises_needed.append(f"Mission Package: Dedicated role differs — Requires modular mission payload re-fit.")
+
+        # 6. Stealth
+        prop = vehicle.get("stealth_profile", {}).get("propulsion_type", "Standard")
+        if req_stealth == "Silent Electric Only":
+            if "electric" in prop.lower():
+                strengths_met.append(f"Stealth Envelope: All-electric silent propulsion satisfies acoustic/thermal profile")
+            else:
+                deductions += 10.0
+                compromises_needed.append(f"Acoustic/Thermal Signature: Utilizes {prop} powertrain (Higher acoustic/thermal signature than silent electric) — Operate with thermal shielding and standoff idling.")
+
+        # 7. Altitude
+        veh_alt = vehicle.get("climate_altitude", {}).get("max_altitude_m_asl", 3000)
+        if req_alt > 3000:
+            if veh_alt >= req_alt:
+                strengths_met.append(f"Altitude Rating: Certified up to {veh_alt} m ASL (Meets {req_alt:.0f} m requirement)")
+            else:
+                deductions += 10.0
+                compromises_needed.append(f"Altitude Ceiling: Certified to {veh_alt} m ASL vs {req_alt:.0f} m ASL requested — Requires cold-weather intake heating.")
+
+        # Calculate final compromise score
+        raw_tradeoff = (base_score * compliance_ratio * 0.7) + (85.0 * compliance_ratio * 0.3) - (deductions * 0.4)
+        tradeoff_score = max(5.0, min(95.0, raw_tradeoff))
+        
+        # Primary shortfall for summary display
+        primary_shortfall = compromises_needed[0].split("—")[0].strip() if compromises_needed else "Minor operational deviation"
+        if len(primary_shortfall) > 36:
+            primary_shortfall = primary_shortfall[:33] + "..."
+
+        route_info = {}
+        if calculate_route_feasibility:
+            try:
+                route_info = calculate_route_feasibility(
+                    vehicle,
+                    requirements.get("Terrain", "Plain / Grassland"),
+                    derived["mission_distance"],
+                    derived["max_time"]
+                )
+            except Exception:
+                route_info = {}
+
+        compromise_candidates.append({
+            "vehicle_id": vehicle.get("vehicle_id", "N/A"),
+            "vehicle_name": vehicle.get("vehicle_name", "Unknown Vehicle"),
+            "is_feasible": False,
+            "is_compromise": True,
+            "final_score": tradeoff_score,
+            "compliance_ratio": compliance_ratio,
+            "compliance_text": compliance_text,
+            "primary_shortfall": primary_shortfall,
+            "scores": cat_scores,
+            "route_info": route_info,
+            "explanation": {
+                "summary": f"Achieved highest partial multi-criteria compliance ({compliance_text}) among available defense platforms.",
+                "strengths": strengths_met,
+                "compromises": compromises_needed,
+                "failed_constraints": failed_reasons
+            },
+            "details": vehicle
+        })
+
+    compromise_candidates.sort(key=lambda x: x["final_score"], reverse=True)
+    return compromise_candidates
 
 
 def perform_sensitivity_analysis(vehicles, requirements, base_weights, feasible_results):

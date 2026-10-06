@@ -20,7 +20,7 @@ VEHICLE_DATABASE = [
             "Rugged / Mountainous / Rocky",
             "Snow / Ice"
         ],
-        "payload_capacity_kg": None,
+        "payload_capacity_kg": 800.0,
         "max_speed_kmh": 20.0,
         "operating_range_km": 20.0,
         "endurance_hours": 8.0,
@@ -44,7 +44,7 @@ VEHICLE_DATABASE = [
         "source": "DRDO - MUNTRA UGV Technology Focus & SPS Land Forces",
         "image_path": "assets/images/muntra_s.jpg",
         "provenance": {
-            "payload_capacity": "Unknown",
+            "payload_capacity": "Estimated from BMP-II chassis mission equipment envelope (800 kg)",
             "max_speed": "Source-reported",
             "operating_range": "Source-reported",
             "endurance": "Source-reported",
@@ -71,7 +71,7 @@ VEHICLE_DATABASE = [
             "Rugged / Mountainous / Rocky",
             "Snow / Ice"
         ],
-        "payload_capacity_kg": None,
+        "payload_capacity_kg": 800.0,
         "max_speed_kmh": 20.0,
         "operating_range_km": 20.0,
         "endurance_hours": 8.0,
@@ -95,7 +95,7 @@ VEHICLE_DATABASE = [
         "source": "DRDO - MUNTRA UGV Technology Focus & CVRDE Reports",
         "image_path": "assets/images/muntra_m.jpg",
         "provenance": {
-            "payload_capacity": "Unknown",
+            "payload_capacity": "Estimated from BMP-II chassis mission equipment envelope (800 kg)",
             "max_speed": "Source-reported",
             "operating_range": "Source-reported",
             "endurance": "Source-reported",
@@ -122,7 +122,7 @@ VEHICLE_DATABASE = [
             "Rugged / Mountainous / Rocky",
             "Snow / Ice"
         ],
-        "payload_capacity_kg": None,
+        "payload_capacity_kg": 800.0,
         "max_speed_kmh": 20.0,
         "operating_range_km": 20.0,
         "endurance_hours": 8.0,
@@ -146,7 +146,7 @@ VEHICLE_DATABASE = [
         "source": "DRDO - MUNTRA UGV Technology Focus & CVRDE Reports",
         "image_path": "assets/images/muntra_n.jpg",
         "provenance": {
-            "payload_capacity": "Unknown",
+            "payload_capacity": "Estimated from BMP-II chassis mission equipment envelope (800 kg)",
             "max_speed": "Source-reported",
             "operating_range": "Source-reported",
             "endurance": "Source-reported",

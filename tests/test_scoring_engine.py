@@ -250,6 +250,56 @@ class TestScoringEngine(unittest.TestCase):
             self.assertIn("thermal_signature_level", v["stealth_profile"])
             self.assertIn("provenance", v)
 
+    def test_adaptive_tradeoff_fallback_when_zero_feasible(self):
+        """
+        Phase 8: Test Adaptive Trade-off fallback when extreme or conflicting parameters yield 0 feasible candidates.
+        Verifies that the engine never returns an empty dead end, but instead ranks best-fit compromises.
+        """
+        req = {
+            "Mission Role": "CBRN Reconnaissance",
+            "Mission Roles": ["CBRN Reconnaissance", "Surveillance", "Combat / Tactical Support"],
+            "Terrain": "Snow / Ice",
+            "Payload": 150.0,
+            "Operating Range": 27.0,
+            "Minimum Mission Time": 25.0,
+            "Maximum Mission Time": 30.0,
+            "Standoff Distance": 30.0,
+            "Operational Altitude": 1500.0,
+            "Stealth Requirement": "Silent Electric Only"
+        }
+        prio = {k: "Medium" for k in ["Mission Role", "Terrain", "Payload", "Operating Range", "Minimum Mission Time", "Maximum Mission Time"]}
+        weights = generate_weights(prio)
+
+        result = rank_vehicles(VEHICLE_DATABASE, req, weights)
+        self.assertEqual(len(result["feasible"]), 0, "No vehicle satisfies all 100% extreme parameters")
+        self.assertGreater(len(result["compromise"]), 0, "Compromise fallback must produce alternatives")
+        
+        top_compromise = result["compromise"][0]
+        self.assertEqual(top_compromise["vehicle_name"], "TASL Tracked UGV")
+        self.assertGreater(top_compromise["final_score"], 70.0)
+        self.assertTrue(top_compromise["is_compromise"])
+        self.assertIn("compliance_text", top_compromise)
+        self.assertIn("strengths", top_compromise["explanation"])
+        self.assertIn("compromises", top_compromise["explanation"])
+        self.assertTrue(any("Standoff" in c for c in top_compromise["explanation"]["compromises"]))
+
+    def test_no_compromise_when_feasible_candidates_exist(self):
+        """Verify that when standard feasible candidates exist, compromise list is empty."""
+        req = {
+            "Mission Role": "Surveillance",
+            "Terrain": "Plain / Grassland",
+            "Payload": 20.0,
+            "Operating Range": 5.0,
+            "Minimum Mission Time": 1.0,
+            "Maximum Mission Time": 3.0
+        }
+        prio = {k: "Medium" for k in req}
+        weights = generate_weights(prio)
+
+        result = rank_vehicles(VEHICLE_DATABASE, req, weights)
+        self.assertGreater(len(result["feasible"]), 0)
+        self.assertEqual(len(result["compromise"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
